@@ -1,4 +1,4 @@
-package Mojolicious::Plugin::Migration::Sqitch::Command::migrate_schema;
+package Mojolicious::Plugin::Migration::Sqitch::Command::schema_migrate;
 use v5.26;
 use warnings;
 
@@ -6,7 +6,7 @@ use warnings;
 
 =head1 SYNOPSIS
 
-  Usage: <APP> migrate-schema [args]
+  Usage: <APP> schema-migrate [args]
 
   Options:
     args        passed to sqitch
@@ -23,7 +23,7 @@ has usage       => sub ($self) { $self->extract_usage };
 
 sub run($self, @args) {
   unshift(@args, 'deploy') unless(@args);
-  die("You must specify a ".$self->app->db->migration_tool." subcommand (e.g., deploy or revert)\n") if(@args && !grep {/^[^-]/} @args);
+  die("You must specify a sqitch subcommand (e.g., deploy or revert)\n") if(@args && !grep {/^[^-]/} @args);
   my $v = $self->app->run_schema_migration(join(q{ }, @args));
   warn "an error occurred: $v\n" and exit $v if($v);
 }
