@@ -26,6 +26,8 @@ Mojolicious::Plugin::Migration::Sqitch - run Sqitch database migrations from a M
 
 use Mojo::Base 'Mojolicious::Plugin';
 
+use Syntax::Keyword::Try;
+
 use experimental qw(signatures);
 
 sub _parse_dsn($dsn) {
@@ -49,14 +51,34 @@ sub register($self, $app, $conf) {
   my $migrations_directory = $conf->{directory};
 
   $app->helper(
+    run_schema_initialization => sub ($self, $args = {}) {
+      my $dbh = DBI->connect(
+        sprintf('DBI:%s:host=%s;port=%s',
+          $dsn->{driver},
+          $dsn->{host},
+          $dsn->{port},
+        ), 
+        $migrations_username,
+        $migrations_password,
+      );
+      try { 
+        $dbh->do(q{CREATE DATABASE IF NOT EXISTS `}.$dsn->{database}.q{` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'});
+        $dbh->do(q{CREATE DATABASE IF NOT EXISTS `}.$migrations_registry.q{` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'});
+      } catch($e) {
+        say STDERR "Database creation failed: $e";
+      }
+    }
+  );
+
+  $app->helper(
     run_schema_migration => sub ($self, $args) {
       my $make_dsn = sub ($obscured = 0) {
         sprintf('db:%s://%s:%s@%s/%s', 
-          $dsn->driver, 
+          $dsn->{driver}, 
           $migrations_username, 
           $obscured ? '*'x8 : $migrations_password, 
-          $dsn->host, 
-          $dsn->database
+          $dsn->{host}, 
+          $dsn->{database}
         );
       };
 
@@ -68,7 +90,7 @@ sub register($self, $app, $conf) {
           $make_dsn->($_), ) 
       } (0,1);
 
-      $self->log->debug($log_cmd) if($self->has_mojo_log);
+      $app->log->debug($log_cmd);
       my $err = system($cmd);
 
       return ($? & 0x7F) ? ($? & 0x7F) | 0x80 : $? >> 8 if ($err);
