@@ -18,26 +18,33 @@ Mojolicious::Plugin::Migration::Sqitch - run Sqitch database migrations from a M
 
 =head2 register
 
+=head2 run_schema_initialization
+
+=head2 run_schema_migration
+
 =head1 COMMANDS
 
-=head2 migrate-schema
+=head2 schema-initdb
+
+=head2 schema-migrate
 
 =cut
 
 use Mojo::Base 'Mojolicious::Plugin';
 
+use DBI;
 use Syntax::Keyword::Try;
 
 use experimental qw(signatures);
 
 sub _parse_dsn($dsn) {
-  my ($scheme, $driver, $attr_string, $attr_hash, $driver_dsn) = DBI->parse_dsn($dsn);
-  my %driver_param = split(/[;=]/, $driver_dsn);
+  my ($scheme, $driver, $attr_string, $attr_hash, $driver_param_str) = DBI->parse_dsn($dsn);
+  my %driver_params = split(/[;=]/, $driver_param_str);
   {
     scheme => $scheme,
     driver => $driver,
     params => $attr_hash // {},
-    %driver_param,
+    %driver_params,
   }
 }
 
@@ -61,6 +68,16 @@ sub register($self, $app, $conf) {
         $migrations_username,
         $migrations_password,
       );
+
+      if($args->{reset}) {
+        try {
+          $dbh->do(q{DROP DATABASE IF EXISTS `}.$migrations_registry.q{`});
+          $dbh->do(q{DROP DATABASE IF EXISTS `}.$dsn->{database}.q{`});
+        } catch($e) {
+          say STDERR "Database reset failed: $e";
+        }
+      }
+
       try { 
         $dbh->do(q{CREATE DATABASE IF NOT EXISTS `}.$dsn->{database}.q{` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'});
         $dbh->do(q{CREATE DATABASE IF NOT EXISTS `}.$migrations_registry.q{` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'});
