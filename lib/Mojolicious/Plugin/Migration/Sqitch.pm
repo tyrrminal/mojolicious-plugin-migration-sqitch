@@ -132,17 +132,23 @@ use Mojo::Base 'Mojolicious::Plugin';
 
 use DBI;
 use Syntax::Keyword::Try;
+use Readonly;
 
 use experimental qw(signatures);
+
+Readonly::Scalar my $INITDB_SQL  => q{CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'};
+Readonly::Scalar my $RESETDB_SQL => q{DROP DATABASE IF EXISTS `%s`};
 
 sub _parse_dsn($dsn) {
   my ($scheme, $driver, $attr_string, $attr_hash, $driver_param_str) = DBI->parse_dsn($dsn);
   my %driver_params = split(/[;=]/, $driver_param_str);
   {
-    scheme => $scheme,
-    driver => $driver,
-    params => $attr_hash // {},
-    %driver_params,
+    scheme    => $scheme,
+    driver    => $driver,
+    attr_str  => $attr_string,
+    attrs     => $attr_hash // {},
+    params    => {%driver_params},
+    param_str => $driver_param_str
   }
 }
 
@@ -155,30 +161,35 @@ sub register($self, $app, $conf) {
   my $migrations_password  = $conf->{password};
   my $migrations_directory = $conf->{directory};
 
+  my $initdb_sql = $conf->{initdb_sql} // $INITDB_SQL;
+  my $resetdb_sql = $conf->{resetdb_sql} // $RESETDB_SQL;
+
+  my $connectdb = $conf->{connectdb} // sub($parsed_dsn, $u, $p) {
+    DBI->connect(
+        sprintf('DBI:%s:host=%s;port=%s',
+          $parsed_dsn->{driver},
+          $parsed_dsn->{params}->{host},
+          $parsed_dsn->{params}->{port},
+        ), $u, $p,
+      );
+  };
+  my $initdb  = $conf->{initdb}  // sub($dbh, $name) { $dbh->do(sprintf($initdb_sql, $name)) };
+  my $resetdb = $conf->{resetdb} // sub($dbh, $name) { $dbh->do(sprintf($resetdb_sql, $name)) };
+
   $app->helper(
     run_schema_initialization => sub ($self, $args = {}) {
-      my $dbh = DBI->connect(
-        sprintf('DBI:%s:host=%s;port=%s',
-          $dsn->{driver},
-          $dsn->{host},
-          $dsn->{port},
-        ), 
-        $migrations_username,
-        $migrations_password,
-      );
+      my $dbh = $connectdb->($dsn, $migrations_username, $migrations_password);
 
       if($args->{reset}) {
         try {
-          $dbh->do(q{DROP DATABASE IF EXISTS `}.$migrations_registry.q{`});
-          $dbh->do(q{DROP DATABASE IF EXISTS `}.$dsn->{database}.q{`});
+          $resetdb->($dbh, $_) foreach ($migrations_registry, $dsn->{params}->{database});
         } catch($e) {
           say STDERR "Database reset failed: $e";
         }
       }
 
       try { 
-        $dbh->do(q{CREATE DATABASE IF NOT EXISTS `}.$dsn->{database}.q{` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'});
-        $dbh->do(q{CREATE DATABASE IF NOT EXISTS `}.$migrations_registry.q{` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci'});
+        $initdb->($dbh, $_) foreach($dsn->{params}->{database}, $migrations_registry);
       } catch($e) {
         say STDERR "Database creation failed: $e";
       }
@@ -193,8 +204,8 @@ sub register($self, $app, $conf) {
           $dsn->{driver}, 
           $migrations_username, 
           $obscured ? '*'x8 : $migrations_password, 
-          $dsn->{host}, 
-          $dsn->{database}
+          $dsn->{params}->{host}, 
+          $dsn->{params}->{database}
         );
       };
 
