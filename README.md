@@ -14,14 +14,25 @@ Mojolicious::Plugin::Migration::Sqitch - Run Sqitch database migrations from a M
     });
 
     # use from command-line (normally done by startup script to ensure db up to date before app starts)
+    tyrrminal@prodserver:/app$ script/myapp schema-initdb
+    [2024-04-30 11:26:47.91166] [8982] [info] Database initialized
+
     tyrrminal@prodserver:/app$ script/myapp schema-migrate
     Deploying changes to db:MariaDB://sqitch@db/myapp_dev
       + initial_schema .. ok
+    [2024-04-30 11:29:13.80192] [8985] [info] Database migration complete
 
     # Revert a migration in dev
     tyrrminal@devserver:/app$ script/myapp schema-migrate schema-migrate revert
     Revert all changes from db:MariaDB://sqitch@db/myapp_dev? [Yes] 
       - initial_schema .. ok
+    [2024-04-30 11:26:47.91166] [8982] [info] Database migration complete
+
+    # Start over from scratch
+    tyrrminal@devserver:/app$ script/myapp schema-initdb --reset
+    This will result in all data being deleted from the database. Are you sure you want to continue? [yN] y
+    [2024-04-30 11:28:10.73379] [8983] [info] Database reset
+    [2024-04-30 11:28:10.73501] [8983] [info] Database initialized
 
 # DESCRIPTION
 
