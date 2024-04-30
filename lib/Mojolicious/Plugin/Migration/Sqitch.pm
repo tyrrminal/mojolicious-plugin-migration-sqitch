@@ -199,14 +199,24 @@ sub register($self, $app, $conf) {
   $app->helper(
     run_schema_migration => sub ($self, $subcommand) {
       die("Sqitch subcommand is required") unless($subcommand);
-      my $make_dsn = sub ($obscured = 0) {
-        sprintf('db:%s://%s:%s@%s/%s', 
-          $dsn->{driver}, 
-          $migrations_username, 
-          $obscured ? '*'x8 : $migrations_password, 
-          $dsn->{params}->{host}, 
-          $dsn->{params}->{database}
-        );
+      my $make_dsn = sub ($obscured = 0) { # sqitch DSNs are a) different than DBI's, and b) complicated. This should cover all cases in sqitch's manual
+        my $driver = $dsn->{driver};
+
+        my $port = $dsn->{params}->{port} ? ':'.$dsn->{params}->{port} : '';
+        my $host = $dsn->{params}->{host} ? $dsn->{params}->{host} . $port : '';
+
+        my $username = $migrations_username ? $migrations_username : '';
+        my $password = $migrations_password ? ':'.($obscured ? '*'x8 : $migrations_password) : '';
+        my $credentials = $username ? "$username$password@" : '';
+
+        my $connection = ($credentials || $host) ? "//$credentials$host/" : '';
+        my ($name) = ((grep { defined } @{$dsn->{params}}{qw(database dbname)}), '');
+
+        my $params = '';
+        $params .= '?Driver='.ucfirst($driver) if(grep { lc($driver) eq $_ } (qw(exasol snowflake vertica)));
+        $params .= ";warehouse=$migrations_registry" if(grep { lc($driver) eq $_ } (qw(snowflake)));
+
+        return sprintf("db:$driver:$connection$name$params");
       };
 
       my ($cmd, $log_cmd) = map { 
