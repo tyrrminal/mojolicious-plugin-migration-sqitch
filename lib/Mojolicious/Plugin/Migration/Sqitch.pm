@@ -183,15 +183,17 @@ sub register($self, $app, $conf) {
       if($args->{reset}) {
         try {
           $resetdb->($dbh, $_) foreach ($migrations_registry, $dsn->{params}->{database});
+          $app->log->info("Database reset");
         } catch($e) {
-          say STDERR "Database reset failed: $e";
+          $app->log->error("Database reset failed: $e");
         }
       }
 
       try { 
         $initdb->($dbh, $_) foreach($dsn->{params}->{database}, $migrations_registry);
+        $app->log->info("Database initialized");
       } catch($e) {
-        say STDERR "Database creation failed: $e";
+        $app->log->error("Database creation failed: $e");
       }
     }
   );
@@ -230,7 +232,12 @@ sub register($self, $app, $conf) {
       $app->log->debug($log_cmd);
       my $err = system($cmd);
 
-      return ($? & 0x7F) ? ($? & 0x7F) | 0x80 : $? >> 8 if ($err);
+      if ($err) {
+        my $code = ($? & 0x7F) ? ($? & 0x7F) | 0x80 : $? >> 8;
+        $app->log->error("Database migration failed: $code");
+        return $code;
+      }
+      $app->log->info("Database migration complete");
       return 0;
     }
   )
