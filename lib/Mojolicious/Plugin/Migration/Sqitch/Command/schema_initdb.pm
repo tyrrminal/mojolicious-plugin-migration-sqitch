@@ -6,15 +6,15 @@ use warnings;
 
 =head1 SYNOPSIS
 
-  Usage: <APP> schema-initdb [args]
+  Usage: <APP> schema-initdb [--reset]
 
   Options:
-    args        passed to sqitch
-                (defaults to "deploy" if omitted)
+    --reset      Drop database and re-create
 
 =cut
 
 use Mojo::Base 'Mojolicious::Command';
+use Getopt::Long qw(GetOptionsFromArray :config pass_through);
 
 use experimental qw(signatures);
 
@@ -22,7 +22,16 @@ has description => 'Perform database schema initialization';
 has usage       => sub ($self) { $self->extract_usage };
 
 sub run($self, @args) {
-  $self->app->run_schema_initialization();
+  GetOptionsFromArray(\@args,
+    reset   => \my $reset,
+  );
+  if($reset) {
+    print "This will result in all data being deleted from the database. Are you sure you want to continue? [yN] ";
+    my $response = <STDIN>;
+    chomp($response);
+    die("Aborted\n") unless($response =~ /^y(es|eah)?$/i)
+  }
+  $self->app->run_schema_initialization({reset => $reset});
 }
 
 =pod
